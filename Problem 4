@@ -1,0 +1,112 @@
+library(Matching)
+library(rgenoud)
+library(foreign)
+
+foo <- read.csv("https://course-resources.minerva.kgi.edu/uploaded_files/mke/00086677-3767/peace.csv")
+
+which( colnames(foo)=="pbs2l" )
+which( colnames(foo)=="pbs5l" )
+which( colnames(foo)=="uncint" )
+
+foo <- foo[, c(6:8, 11:16, 34, 35, 99, 50, 114, 49, 63, 136, 109, 126, 48, 160, 142, 10, 52)]
+foo <- foo[c(-19, -47, -4, -16, -84, -93, -98), ]
+
+which(is.na(foo) == TRUE)
+
+head(foo)
+
+#Replacing success=1 and failure=0 for outcome variables
+foo$pbs2l <- as.character(foo$pbs2l)
+foo[which(foo$pbs2l == 'Success'),]$pbs2l <- as.integer(1)
+foo[which(foo$pbs2l == 'Failure'),]$pbs2l <- as.integer(0)
+
+foo$pbs5l <- as.character(foo$pbs5l)
+foo[which(foo$pbs5l == 'Success'),]$pbs5l <- as.integer(1)
+foo[which(foo$pbs5l == 'Failure'),]$pbs5l <- as.integer(0)
+
+foo$pbs2l <- as.factor(foo$pbs2l)
+foo$pbs5l <- as.factor(foo$pbs5l)
+
+#Replacing 0 - None, 2 - Observer, 3 - PKO, 4 - Enforcement for uncint
+foo$uncint <- as.character(foo$uncint)
+foo[which(foo$uncint == 'None'),]$uncint <- as.integer(0)
+foo[which(foo$uncint == 'Observer'),]$uncint <- as.integer(2)
+foo[which(foo$uncint == 'PKO'),]$uncint <- as.integer(3)
+foo[which(foo$uncint == 'Enforcement'),]$uncint <- as.integer(4)
+
+foo$uncint <- as.factor(foo$uncint)
+
+
+Tr <- rep(0, length(foo$uncint))
+Tr[which(foo$uncint != 0 & foo$uncint != 1)] <- 1
+
+X = cbind(foo$wartype, foo$logcost, foo$wardur, foo$factnum, 
+          foo$factnum2, foo$trnsfcap, foo$treaty, 
+          foo$develop, foo$exp, foo$decade)
+
+#For pbs2l: 
+#logistic regression of pbs2l against Tr and basic variables
+glm1 <- glm(pbs2l ~ Tr + wartype + logcost + wardur + factnum + factnum2 + trnsfcap
+            + treaty + develop + exp + decade, data = foo, family = "binomial")
+
+
+#P-Score Matching (pbs2l)
+glmp1 <- glm(Tr ~ wartype + logcost + wardur + factnum + factnum2 + trnsfcap + 
+               treaty + develop + exp + decade, data = foo, family = "binomial")
+
+mout1 <- Match(Tr = Tr, X = glmp1$fitted.values, Y = foo$pbs2l, estimand = "ATT", M = 1, BiasAdjust = TRUE)
+
+mb1  <- MatchBalance(Tr ~ wartype + logcost + wardur + factnum + 
+                       factnum2 + trnsfcap + treaty + develop + exp + decade, 
+                     data = foo, match.out = mout1, nboots = 500)
+
+#Genetic Matching for pbs2l
+genout1 <- GenMatch(Tr = Tr, X = X, estimand = "ATT", pop.size = 200, max.generations = 30, 
+                    wait.generations = 25)
+
+mout1g <- Match(Tr = Tr ,Weight.matrix = genout1, X = X , Y = foo$pbs2l, 
+                estimand = "ATT", M = 1, BiasAdjust = TRUE)
+
+mb1g  <- MatchBalance(Tr ~  wartype + logcost + wardur + factnum + 
+                       factnum2 + trnsfcap + treaty + develop + exp + decade, 
+                     data = foo, match.out = mout1g, nboots = 500)
+
+#For pbs5l:
+#logistic regression of pbs5l against Tr and basic variables
+glm2 <- glm(pbs5l ~ Tr + wartype + logcost + wardur + factnum + factnum2 + trnsfcap
+            + treaty + develop + exp + decade, data = foo, family = "binomial")
+
+
+#P-Score Matching (pbs5l)
+glmp2 <- glm(Tr ~ wartype + logcost + wardur + factnum + factnum2 + trnsfcap + 
+               treaty + develop + exp + decade, data = foo, family = "binomial")
+
+mout2 <- Match(Tr = Tr, X = glmp1$fitted.values, Y = foo$pbs5l, estimand = "ATT", M = 1,
+               BiasAdjust = TRUE)
+
+mb2  <- MatchBalance(Tr ~ wartype + logcost + wardur + factnum + 
+                       factnum2 + trnsfcap + treaty + develop + exp + decade, 
+                     data = foo, match.out = mout2, nboots = 500)
+
+#Genetic Matching for pbs5l
+genout2 <- GenMatch(Tr = Tr, X = X, estimand = "ATT", pop.size = 200, max.generations = 30, 
+                    wait.generations = 25)
+
+mout2g <- Match(Tr = Tr ,Weight.matrix = genout2, X = X , Y = foo$pbs5l, 
+                estimand = "ATT", M = 1, BiasAdjust = TRUE)
+
+mb2g  <- MatchBalance(Tr ~  wartype + logcost + wardur + factnum + 
+                        factnum2 + trnsfcap + treaty + develop + exp + decade, 
+                      data = foo, match.out = mout2g, nboots = 500)
+
+
+
+#Outputs:
+summary(glm1)
+summary(glm2)
+
+summary(mout1g)
+mout1g$est.noadj
+
+summary(mout2g)
+mout2g$est.noadj
